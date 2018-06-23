@@ -1,0 +1,3 @@
+[submodule "pymeanshift"]
+	path = pymeanshift
+	url = https://github.com/fjean/pymeanshift.git
