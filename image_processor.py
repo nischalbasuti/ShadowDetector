@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-import tensorflow as tf
 import numpy as np
 import cv2 as cv
 import xml.etree.ElementTree
@@ -18,10 +17,14 @@ class ImageProcessed(object):
         self.shadow_points = []
         self.segments = {}          # [ { image_of_segment, is_shadow }, ... ]
 
-    def openWithMAT(self):
+        self.mode = "" # String specifying if opening with mat or tappen
+
+    def open_with_mat(self):
+        self.mode = "mat"
+
         # Find the shadow points from the corresponding mat file.
         # TODO: use regex to change extension
-        # "./data/train/annt_1.mat"
+        # mat files in the form of: "./data/train/annt_1.mat"
         mat_file_name = "./data/train/annt_"+str(self.filename[:-3]) + "mat"
         print("mat file:", mat_file_name)
         mat = sio.loadmat(mat_file_name)
@@ -32,11 +35,34 @@ class ImageProcessed(object):
                 (np.array(mat['im']).shape[1], np.array(mat['im']).shape[0]) )
 
         self.shadow_regions = mat['allshadow']
-        # non_shadow_regions = mat['allnonshadow']
-        # numlabel = mat['numlabel'] # TODO: find out what this is.
+        self._segment()
+
+    def open_with_tappen(self):
+        self.mode="tappen"
+
+        # "./data/tappen/gt/image_name.png"
+        self.shadow_mask = cv.imread("./data/tappen/gt/"+str(self.filename[:-3]) + "png")[:,:,1] / 255
+        print(self.shadow_mask.shape)
+        print("./data/tappen/gt/"+self.filename)
+        print("gt file:", self.shadow_mask)
+
+        # Make sure image and mask are of the same size
+        if self.image.shape != self.shadow_mask.shape:
+            self.image = cv.resize( self.image, ( self.shadow_mask.shape[1], self.shadow_mask.shape[0] ) )
+        self._segment()
 
     def showShadows(self):
-        pass
+        shadow_image = copy.deepcopy(self.image)
+
+        for i in range(len(self.segments)):
+            if self.segments[i]["is_shadow"] == True:
+                for col in self.segments[i]["points"].keys():
+                    rows = self.segments[i]["points"][col]
+                    for row in rows:
+                        shadow_image[col, row] = (0, 255, 0)
+        cv.imshow("shadow image", shadow_image)
+        cv.imshow("original image", self.image)
+        cv.waitKey()
 
     def show(self):
         # segment the image.
@@ -55,31 +81,12 @@ class ImageProcessed(object):
                                                             spatial_radius = 6,
                                                             range_radius = 4.5,
                                                             min_density = 50)
-        end_time_seconds = time.time()
-        print("...finished segmenting", self.filename, "...",
-                end_time_seconds - start_time_seconds)
-
         # Gather points of each segment.
-        start_time_seconds = time.time()
-        print("...started gathering points of each segment", self.filename, "...")
-
         self._set_segment_points(labels_image, number_regions)
-
-        end_time_seconds = time.time()
-        print("...finished gathering points for each segment...",
-                end_time_seconds - start_time_seconds)
-
         # Construct image of the segment and save to disk.
-        start_time_seconds = time.time()
-        print("...started constructing segment images...")
-
         self._make_segment_images(segmented_image)
 
-        end_time_seconds = time.time()
-        print("...finished constructing segment images...",
-              end_time_seconds - start_time_seconds)
-
-        return segmented_image[:,:]
+        return segmented_image
 
     def _set_segment_points(self, labels_image, number_regions):
         """
@@ -98,12 +105,13 @@ class ImageProcessed(object):
         #                   } ...  
         #               ]
         self.segments = [ { "points": {},
-                            "maxPoint": [0,0], 
+                            "maxPoint": [0,0],
                             "minPoint": [1000,1000]
                           } for i in range(number_regions)]
         # Initialize  a shadow mask, points with shadows will be 1 and points 
         # without shadows will be 0.
-        self.shadow_mask = np.zeros((self.image.shape[0], self.image.shape[1]))
+        if self.mode == "mat":
+            self.shadow_mask = np.zeros((self.image.shape[0], self.image.shape[1]))
 
         # This loop will:
         # 1. Construct the shadow mask.
@@ -111,8 +119,9 @@ class ImageProcessed(object):
         # 3. Find the points that are inside the segment.
         for col in range(self.image.shape[0]):
             for row in range(self.image.shape[1]):
-                if self.image_mask[col, row] in self.shadow_regions:
-                    self.shadow_mask[col, row] = 1
+                if self.mode == "mat":
+                    if self.image_mask[col, row] in self.shadow_regions:
+                        self.shadow_mask[col, row] = 1
                 # store the segments in a list.
 
                 # Find the minimum row and col values.
@@ -125,7 +134,7 @@ class ImageProcessed(object):
                 if self.segments[labels_image[col, row]]["maxPoint"][0] < col:
                     self.segments[labels_image[col, row]]["maxPoint"][0] = col
                 if self.segments[labels_image[col, row]]["maxPoint"][1] < row:
-                    self.segments[labels_image[col, row]]["maxPoint"][1] = row 
+                    self.segments[labels_image[col, row]]["maxPoint"][1] = row
 
                 # Initialize the first time the col comes up.
                 if col not in self.segments[labels_image[col, row]]['points'].keys():
@@ -135,7 +144,7 @@ class ImageProcessed(object):
                 self.segments[labels_image[col, row]]['points'][col].append(row)
 
     def _is_shadow_point(self, col, row):
-        return self.shadow_mask[col, row] == 1
+        return self.shadow_mask[col, row] != 0
 
     def label_shadow_segments(self):
         """
@@ -161,15 +170,24 @@ class ImageProcessed(object):
         """
         Make a seperate segmented images using the points in self.segements.
         """
-        self.label_shadow_segments()
+
+        if self.mode != "":
+            self.label_shadow_segments()
 
         totalWidth = 0
         totalHeight = 0
+        delBuffer = []
         for i in range(len(self.segments)):
             minX = self.segments[i]['minPoint'][0]
             minY = self.segments[i]['minPoint'][1]
             maxX = self.segments[i]['maxPoint'][0]
             maxY = self.segments[i]['maxPoint'][1]
+
+            # Shitty hack, I feel dirty.
+            if maxX - minX == 0:
+                maxX += 1
+            if maxY - minY == 0:
+                maxY += 1
 
             newImage = np.zeros((maxX-minX, maxY-minY, 4), dtype=self.image.dtype)
             # print("minX, minY:", minX, minY)
@@ -182,7 +200,7 @@ class ImageProcessed(object):
                                     self.image[col, row][0],
                                     self.image[col, row][1],
                                     self.image[col, row][2],
-                                    255, # point is not is segment
+                                    255, # point is in segment
                                 ]
                             # # Uncomment to make segment area green.
                             # newImage[col-minX, row-minY] = [0, 255, 0, 1]
@@ -191,11 +209,9 @@ class ImageProcessed(object):
                                     self.image[col, row][0],
                                     self.image[col, row][1],
                                     self.image[col, row][2],
-                                    0, # point is not is segment
+                                    0, # point is not in segment
                                 ]
 
-            # TODO: find out the average dimensions of the output segments and
-            # resize the images to that.
             # if newImage.
             if newImage.shape[0] > newImage.shape[1]:
                 totalWidth += newImage.shape[0]
@@ -204,16 +220,19 @@ class ImageProcessed(object):
                 totalWidth += newImage.shape[1]
                 totalHeight += newImage.shape[0]
 
-            self.segments[i]["image"] = newImage
+            if newImage.shape[0] > 0 and newImage.shape[1] > 0:
+                self.segments[i]["image"] = newImage
+            else:
+                print(newImage.shape)
 
-            write_file = os.path.join("segments","shadows", 
-                                      self.filename+"_"+str(i)+".png")
-            if self.segments[i]["is_shadow"] == False:
-                write_file = os.path.join("segments","non_shadows",
-                                          self.filename+"_"+ str(i)+".png")
-            print("writing", write_file)
-
-            cv.imwrite(write_file, self.segments[i]["image"])
+            if self.mode != "":
+                write_file = os.path.join("segments", "shadows",
+                                          self.filename+"_"+str(i)+".png")
+                if self.segments[i]["is_shadow"] == False:
+                    write_file = os.path.join("segments","non_shadows",
+                                              self.filename+"_"+ str(i)+".png")
+                print("writing", write_file)
+                cv.imwrite(write_file, self.segments[i]["image"])
 
             # print(i, self.segments[i]["is_shadow"])
             # cv.imshow("individual seg",self.segments[i]["image"])
@@ -222,6 +241,9 @@ class ImageProcessed(object):
         self.avgSize = (totalWidth/len(self.segments), totalHeight/len(self.segments))
         print("avg width: ", self.avgSize[0])
         print("avg height: ", self.avgSize[1])
+
+    def get_segment_images(self, shape=(32, 32)):
+        return [ cv.resize(segment["image"], shape)  for segment in self.segments ]
 
 def process_mat_files():
     with open("./data/train/filelist.txt") as f:
@@ -232,19 +254,25 @@ def process_mat_files():
     avgHeight = 0
     for filename in filenames:
         processed = ImageProcessed(cv.imread("./data/train/%s" % filename), filename)
-        processed.openWithMAT()
-        processed._segment()
+        processed.open_with_mat()
         avgWidth += processed.avgSize[0]
         avgHeight+= processed.avgSize[1]
         # processed.show()
         # break
     print("Average size:", avgWidth/len(filenames), avgHeight/len(filenames))
-    # Average size found to be:
-    # Average size: 62.539977253404 34.37801454395283
 
 def process_tappen_files():
-    pass
+    path = "./data/tappen/original"
+    avgWidth = 0
+    avgHeight = 0
+    for (dirpath, dirnames, filenames) in os.walk(path):
+        print(filenames)
+        for filename in filenames:
+            processed = ImageProcessed(cv.imread("./data/tappen/original/%s" % filename), filename)
+            processed.open_with_tappen()
+            avgWidth += processed.avgSize[0]
+            avgHeight+= processed.avgSize[1]
 
-if __name__ == '__main__':
-    process_mat_files()
-    process_tappen_files()
+            avgWidth = 0
+            avgHeight = 0
+    print("Average size:", avgWidth/len(filenames), avgHeight/len(filenames))
