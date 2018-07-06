@@ -4,6 +4,9 @@ import os
 import numpy as np
 import cv2 as cv
 
+# Disable annoying messages.
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
 import keras
 from keras.callbacks import EarlyStopping, ModelCheckpoint
 from keras.models import Sequential
@@ -101,7 +104,7 @@ class Patched_CNN(object):
 
         self.model.compile(
                 # keras.optimizers.SGD(0.01),
-                keras.optimizers.RMSprop(0.01),
+                keras.optimizers.RMSprop(0.001),
                 loss=keras.losses.binary_crossentropy,
                 metrics=["accuracy"]
                 )
@@ -117,13 +120,14 @@ class Patched_CNN(object):
                 callbacks=[
                         EarlyStopping(patience=patience),
                         ModelCheckpoint(
-                            "./checkpoints/weights.{epoch:02d}-{val_acc:.2f}.hdf5",
+                            "./checkpoints/model.{epoch:02d}-{val_acc:.2f}.hdf5",
                             monitor="val_acc",
                             verbose=1,
                             save_best_only=True)
                     ]
                 )
         return
+
     def predict(self, imgs):
         return self.model.predict(imgs)
 
@@ -145,7 +149,6 @@ def open_images(path, max=None, size=(32, 32)):
     return images
 
 if __name__ == '__main__':
-
     shadows = open_images("./segments/shadows")
     non_shadows = open_images("./segments/non_shadows", len(shadows))
 

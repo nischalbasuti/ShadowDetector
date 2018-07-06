@@ -44,7 +44,7 @@ class ImageProcessed(object):
         self.shadow_mask = cv.imread("./data/tappen/gt/"+str(self.filename[:-3]) + "png")[:,:,1] / 255
         print(self.shadow_mask.shape)
         print("./data/tappen/gt/"+self.filename)
-        print("gt file:", self.shadow_mask)
+        # print("gt file:", self.shadow_mask)
 
         # Make sure image and mask are of the same size
         if self.image.shape != self.shadow_mask.shape:
@@ -119,7 +119,9 @@ class ImageProcessed(object):
         # 3. Find the points that are inside the segment.
         for col in range(self.image.shape[0]):
             for row in range(self.image.shape[1]):
+
                 if self.mode == "mat":
+                    # Make the shadow mask if mat.
                     if self.image_mask[col, row] in self.shadow_regions:
                         self.shadow_mask[col, row] = 1
                 # store the segments in a list.
