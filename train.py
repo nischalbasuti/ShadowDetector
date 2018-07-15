@@ -16,8 +16,8 @@ y.extend([ 0 for i in range(len(non_shadows)) ])
 cnn = Patched_CNN()
 cnn.build_model()
 
-batch_size = 100
-epochs = 10
-patience = 2
+batch_size = 50
+epochs = 50
+patience = 5
 cnn.train(x, y, batch_size, epochs, patience)
 cnn.save_model()

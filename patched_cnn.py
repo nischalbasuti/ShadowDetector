@@ -19,12 +19,10 @@ from random import shuffle
 
 class Patched_CNN(object):
     """
-    Implementation of 'Patched CNN' architecture from
-    http://chenpingyu.org/docs/yago_eccv2016.pdf (page 9)
-
-    CNN that accepts 4 channels; Red, Green, Blue and Patch.
-    Here, Patch is meant to be a mask which specifies if the pixel is part the
-    the segment being classified, or just from a neighbouring segment.
+    Implementation based on the 'Patched CNN' architecture from
+    http://chenpingyu.org/docs/yago_eccv2016.pdf (page 9).
+    This implementation differs in that it accepts an arbitrary number of
+    channels for the input, which is defined when build_model() is called.
     """
     def __init__(self):
         super(Patched_CNN, self).__init__()
@@ -38,15 +36,16 @@ class Patched_CNN(object):
         """ Save the current model as 'filepath'. """
         self.model.save(filepath)
 
-    def build_model(self):
-        """ Initialize an untrained model. """
-
-        padding = "same"
-        padding = "valid"
+    def build_model(self, channels=3, padding="valid", size=32, **kwargs):
+        """ Initialize an untrained model.
+            :channels: number of channels of input, i.e. sizexsizexchannels.
+            :padding: valid or same
+            :size: input dimension size, like size of image.
+        """
 
         # 32x32x4 -> conv1 -> 30x30x50
         self.model.add( Conv2D( 50, activation="relu", kernel_size=(3, 3),
-                                input_shape=(32, 32, 4), padding=padding ))
+                                input_shape=(size, size, channels), padding=padding ))
 
         # 30x30x50 -> conv2 -> 28x28x50
         self.model.add( Conv2D( 50, kernel_size=(3, 3), activation="relu", padding=padding ) )
@@ -74,53 +73,31 @@ class Patched_CNN(object):
 
         # 450 -> Dense Layer -> 1
         # self.model.add( Dense( 450, activation="relu"  ) )
-        self.model.add( Dropout(0.5) )
-        self.model.add( Dense( 1, activation="sigmoid") )
+        # self.model.add( Dropout(0.5) )
+        self.model.add( Dense(size*size, activation="sigmoid") )
 
-        def nll1(y_true, y_pred):
-            """Negative log likelihood:
-            Keras binary cross-entropy loss
-            """
-            # keras.losses.binary_crossentropy give the mean
-            # over the last axis. we require the sum
-            return K.sum(K.binary_crossentropy(y_true, y_pred), axis=-1)
-
-
-        def nll2(y_true, y_pred):
-            """
-            Negative log likelihood:
-            Numerical instability of Bernoulli with probabilities (probs)
-            """
-            likelihood = K.tf.distributions.Bernoulli(probs=y_pred)
-            return - K.sum(likelihood.log_prob(y_true), axis=-1)
-
-        def nll3(y_true, y_pred):
-            """
-            Negative log likelihood:
-            Bernoulli with sigmoid log-odds (logits)
-            """
-            likelihood = K.tf.distributions.Bernoulli(logits=y_pred)
-            return - K.sum(likelihood.log_prob(y_true), axis=-1)
+        # self.model.add( Dense(1, activation="sigmoid") )
 
         self.model.compile(
                 # keras.optimizers.SGD(0.01),
-                keras.optimizers.RMSprop(0.001),
+                keras.optimizers.RMSprop(0.0001),
                 loss=keras.losses.binary_crossentropy,
-                metrics=["accuracy"]
+                metrics=["acc", "mae"]
                 )
 
-    def train(self, image_segments, labels, batch_size=32, epochs=10, patience=2):
+    def train(self, image_segments, labels,
+            batch_size=32, epochs=10, patience=2, prefix="", **kwargs):
         """ Train a model using a arrays of input and output. """
         self.model.fit(
                 np.array(image_segments),
                 np.array(labels),
                 batch_size,
                 epochs,
-                validation_split=0.33,
+                validation_split=0.20,
                 callbacks=[
                         EarlyStopping(patience=patience),
                         ModelCheckpoint(
-                            "./checkpoints/model.{epoch:02d}-{val_acc:.2f}.hdf5",
+                            "./checkpoints/"+prefix+"model.{epoch:02d}-{val_acc:.2f}.hdf5",
                             monitor="val_acc",
                             verbose=1,
                             save_best_only=True)
@@ -128,40 +105,96 @@ class Patched_CNN(object):
                 )
         return
 
-    def predict(self, imgs):
-        return self.model.predict(imgs)
+    def test(self, image_segments=None, labels=None):
+        images = open_images("./data/SBU-Test/ShadowImages", None)
+        shadow_masks = open_images("./data/SBU-Test/ShadowMasks", None, True)
 
-def open_images(path, max=None, size=(32, 32)):
+        x = [] # input features.
+        y = [] # labels
+
+        x.extend(images)
+        y.extend(shadow_masks)
+        ret = self.model.evaluate(
+                x=np.array(x),
+                y=np.array(y),
+                batch_size=None,
+                verbose=1,
+                sample_weight=None,
+                steps=None)
+
+        print("Evaluation loss, accuracy, mean absolute error:", ret)
+        return ret
+
+
+    def predict(self, img):
+        return self.model.predict(img)
+
+def open_images(path, max=None, mask=False, size=(32, 32)):
     """ Read images under the directory given in 'path'. """
     print("- Loading images from", path)
     for (dirpath, dirnames, filenames) in os.walk(path):
         if max is not None:
-            shuffle(filenames)
+            # shuffle(filenames)
             filenames = filenames[:max]
             print("-- limited to reading", max, "files.")
-        images = [
-                    cv.resize(cv.imread(os.path.join(path, fname),
-                                        cv.IMREAD_UNCHANGED)/255.0, size)
-                    for fname in filenames
-                ]
+
+        if mask:
+            images = [
+                        cv.resize(cv.imread(os.path.join(path, fname), cv.IMREAD_UNCHANGED)/255.0, size).flatten()
+                        for fname in filenames
+                    ]
+
+        else:
+            images = [
+                        cv.resize(
+                            cv.cvtColor(cv.imread(os.path.join(path, fname), cv.IMREAD_UNCHANGED), cv.COLOR_BGR2LAB),
+                            size)
+                        for fname in filenames
+                    ]
     # print(filenames)
     print("- Finished loading images from", path)
+    cv.waitKey()
     return images
 
 if __name__ == '__main__':
-    shadows = open_images("./segments/shadows")
-    non_shadows = open_images("./segments/non_shadows", len(shadows))
+
+    # Learn for image.
+    images = open_images("./data/SBUTrain4KRecoveredSmall/ShadowImages", 4070)
+    shadow_masks = open_images("./data/SBUTrain4KRecoveredSmall/ShadowMasks", 4070, True)
 
     x = [] # input features.
     y = [] # labels
 
-    x.extend(shadows)
-    x.extend(non_shadows)
+    x.extend(images)
+    y.extend(shadow_masks)
 
-    y.extend([ 1 for i in range(len(shadows)) ])
-    y.extend([ 0 for i in range(len(non_shadows)) ])
+    prior_cnn = Patched_CNN()
+    prior_cnn.build_model(channels=3)
+    prior_cnn.train(
+            x, y,
+            batch_size=20,
+            epochs=100,
+            patience=5,
+            prefix="prior")
+    prior_cnn.save_model("./prior_model.h5")
 
-    cnn = Patched_CNN()
-    cnn.build_model()
-    cnn.train(x, y, 100, 10, 2)
-    cnn.save_model()
+#     # Learn for each segment.
+#     patch_cnn = Patched_CNN(4)
+
+#     shadows = open_images("./segments/shadows")
+#     non_shadows = open_images("./segments/non_shadows", len(shadows))
+
+#     x = [] # input features.
+#     y = [] # labels
+
+#     x.extend(shadows)
+#     x.extend(non_shadows)
+
+#     y.extend([ 1 for i in range(len(shadows)) ])
+#     y.extend([ 0 for i in range(len(non_shadows)) ])
+
+#     patch_cnn = Patched_CNN()
+#     patch_cnn.build_model(channels=4)
+#     patch_cnn.train(x, y, 100, 10, 2, "patch")
+#     patch_cnn.save_model("patch_model.h5")
+

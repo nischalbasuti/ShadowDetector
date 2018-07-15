@@ -62,6 +62,7 @@ class ImageProcessed(object):
                         shadow_image[col, row] = (0, 255, 0)
         cv.imshow("shadow image", shadow_image)
         cv.imshow("original image", self.image)
+        cv.imshow("segmented image", self.segmented_image)
         cv.waitKey()
 
     def show(self):
@@ -85,6 +86,8 @@ class ImageProcessed(object):
         self._set_segment_points(labels_image, number_regions)
         # Construct image of the segment and save to disk.
         self._make_segment_images(segmented_image)
+
+        self.segmented_image = segmented_image
 
         return segmented_image
 
@@ -146,12 +149,13 @@ class ImageProcessed(object):
                 self.segments[labels_image[col, row]]['points'][col].append(row)
 
     def _is_shadow_point(self, col, row):
-        return self.shadow_mask[col, row] != 0
+        # return self.shadow_mask[col, row] != 0
+        return self.shadow_mask[col, row] >= 0.5
 
-    def label_shadow_segments(self):
+    def label_shadow_segments(self, threshold=0.5):
         """
-        Labels a segment as a shadow if >90% if the points are a shadow in the
-        shadow mask.
+        Labels a segment as a shadow if ratio of shadow points to non-shadow
+        points is over the threshold(default 0.5)
         """
         for i in range(len(self.segments)):
             shadow_point_count = 0
@@ -160,10 +164,14 @@ class ImageProcessed(object):
                 rows = self.segments[i]["points"][col]
                 for row in rows:
                     total_point_count += 1
-                    if self.shadow_mask[col, row] == 1:
+                    if self._is_shadow_point(col, row):
                         shadow_point_count += 1
             print(shadow_point_count/total_point_count)
-            if shadow_point_count/total_point_count > 0.5:
+
+            # if shadow_point_count > 0:
+            #     self.segments[i]["is_shadow"] = True
+
+            if shadow_point_count/total_point_count > threshold:
                 self.segments[i]["is_shadow"] = True
             else:
                 self.segments[i]["is_shadow"] = False
@@ -198,6 +206,7 @@ class ImageProcessed(object):
                 for col in range(minX, maxX):
                     # if col in self.segments[i]['points'].keys():
                     if row in self.segments[i]['points'][col]:
+                        # When col, row is in the current segment.
                         newImage[col-minX, row-minY] = [
                                     self.image[col, row][0],
                                     self.image[col, row][1],
@@ -207,12 +216,16 @@ class ImageProcessed(object):
                             # # Uncomment to make segment area green.
                             # newImage[col-minX, row-minY] = [0, 255, 0, 1]
                     else:
-                        newImage[col-minX, row-minY] = [
-                                    self.image[col, row][0],
-                                    self.image[col, row][1],
-                                    self.image[col, row][2],
-                                    0, # point is not in segment
-                                ]
+                        # When col, row is NOT in the current segment.
+
+                        newImage[col-minX, row-minY] = [ 0, 0, 0, 0 ]
+
+                        # newImage[col-minX, row-minY] = [
+                        #             self.image[col, row][0],
+                        #             self.image[col, row][1],
+                        #             self.image[col, row][2],
+                        #             0, # point is not in segment
+                        #         ]
 
             # if newImage.
             if newImage.shape[0] > newImage.shape[1]:
