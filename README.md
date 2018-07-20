@@ -30,8 +30,14 @@ directory.
 
 ## Detecting shadows
 
+To pass the whole image to the CNN and find the segments which are shadows:
 ```
 ./detect_shadows.py --image <path to image> --model <path to model>
+```
+
+To pass individual segments to the CNN and find the which are shadows:
+```
+./detect_shadows_by_segment.py --image <path to image> --model <path to model>
 ```
 
 ```<path to image>``` is the path to any image.
