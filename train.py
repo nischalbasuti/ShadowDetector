@@ -1,23 +1,22 @@
 #!/usr/bin/env python
 from patched_cnn import *
+import patched_cnn as p
 
-shadows = open_images("./segments/shadows")
-non_shadows = open_images("./segments/non_shadows", len(shadows))
+# TODO: Train with equal number of shadow and non-shadow segments.
+
+# segments = open_images("./segments/images", lab_color=False)
+segments = open_images("./segments/images", lab_color=True)
+shadow_mask = open_images("./segments/shadow_masks", mask=True)
 
 x = [] # input features.
-y = [] # labels
+y = [] # shadow maps.
 
-x.extend(shadows)
-x.extend(non_shadows)
-
-y.extend([ 1 for i in range(len(shadows)) ])
-y.extend([ 0 for i in range(len(non_shadows)) ])
+x.extend(segments)
+y.extend(shadow_mask)
 
 cnn = Patched_CNN()
-cnn.build_model()
+# cnn.build_model(channels=4)
+cnn.build_model(channels=3)
 
-batch_size = 50
-epochs = 50
-patience = 5
-cnn.train(x, y, batch_size, epochs, patience)
+cnn.train(x, y, batch_size=300, epochs=100, patience=3, prefix="segment_lab_")
 cnn.save_model()

@@ -23,24 +23,38 @@ model_source = args.model
 img = cv.imread(image_source)
 
 imgLab = cv.cvtColor(img, cv.COLOR_BGR2LAB)
-
-# print(np.concatenate(( img, imgLab ), 2).shape)
-
 input = np.array([ cv.resize( imgLab, (32, 32) ) ]) # input to nn should be (1, 32, 32, 3)
 
 cnn = pcnn.Patched_CNN()
 cnn.load_model(model_source)
 print("...initialized model...")
 
-pred = cnn.predict(input)
-
+# pred = cnn.predict(input)
+pred = np.zeros(32*32)
 shadow_mask = cv.resize( pred.reshape(32, 32), (img.shape[1], img.shape[0]) )
 
 outImg = copy.deepcopy(img)
 
 imgp = ip.ImageProcessed(img, "image_name")
+imgp._segment(False)
+
+for segment in  imgp.segments:
+    imgLab = cv.cvtColor(segment["image"], cv.COLOR_BGR2LAB)
+    # imgLab = segment["image"]
+    input = np.array([ cv.resize( imgLab, (32, 32) ) ]) # input to nn should be (1, 32, 32, 3)
+    segment_shadow_map = cv.resize(
+                cnn.predict(input).reshape(32, 32),
+                (segment["image"].shape[1], segment["image"].shape[0])
+            )
+
+    print("segment shadow map shape:", segment_shadow_map.shape)
+    for col in range(segment["minPoint"][0], segment["maxPoint"][0]):
+        for row in range(segment["minPoint"][1], segment["maxPoint"][1]):
+            shadow_mask[col, row] = segment_shadow_map[
+                                        col - segment["minPoint"][0],
+                                        row - segment["minPoint"][1]
+                                    ]
 imgp.shadow_mask = shadow_mask
-imgp._segment()
 imgp.label_shadow_segments(0.1)
 imgp.showShadows()
 

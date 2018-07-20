@@ -129,7 +129,7 @@ class Patched_CNN(object):
     def predict(self, img):
         return self.model.predict(img)
 
-def open_images(path, max=None, mask=False, size=(32, 32)):
+def open_images(path, max=None, mask=False, size=(32, 32), lab_color=True,**kwargs):
     """ Read images under the directory given in 'path'. """
     print("- Loading images from", path)
     for (dirpath, dirnames, filenames) in os.walk(path):
@@ -144,13 +144,21 @@ def open_images(path, max=None, mask=False, size=(32, 32)):
                         for fname in filenames
                     ]
 
-        else:
+        elif lab_color:
             images = [
                         cv.resize(
                             cv.cvtColor(cv.imread(os.path.join(path, fname), cv.IMREAD_UNCHANGED), cv.COLOR_BGR2LAB),
                             size)
                         for fname in filenames
                     ]
+        else:
+            images = [
+                        cv.resize(
+                            cv.imread(os.path.join(path, fname), cv.IMREAD_UNCHANGED),
+                            size)
+                        for fname in filenames
+                    ]
+
     # print(filenames)
     print("- Finished loading images from", path)
     cv.waitKey()
@@ -176,25 +184,5 @@ if __name__ == '__main__':
             epochs=100,
             patience=5,
             prefix="prior")
-    prior_cnn.save_model("./prior_model.h5")
-
-#     # Learn for each segment.
-#     patch_cnn = Patched_CNN(4)
-
-#     shadows = open_images("./segments/shadows")
-#     non_shadows = open_images("./segments/non_shadows", len(shadows))
-
-#     x = [] # input features.
-#     y = [] # labels
-
-#     x.extend(shadows)
-#     x.extend(non_shadows)
-
-#     y.extend([ 1 for i in range(len(shadows)) ])
-#     y.extend([ 0 for i in range(len(non_shadows)) ])
-
-#     patch_cnn = Patched_CNN()
-#     patch_cnn.build_model(channels=4)
-#     patch_cnn.train(x, y, 100, 10, 2, "patch")
-#     patch_cnn.save_model("patch_model.h5")
+    # prior_cnn.save_model("./prior_model.h5")
 

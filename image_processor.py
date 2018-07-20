@@ -70,7 +70,7 @@ class ImageProcessed(object):
         cv.imshow("original image %s" % self.filename, self.image)
         cv.waitKey()
 
-    def _segment(self, threshold=0):
+    def _segment(self, label_shadows=True , threshold=0):
          ##
          # Segment the image.
         start_time_seconds = time.time()
@@ -85,7 +85,7 @@ class ImageProcessed(object):
         # Gather points of each segment.
         self._set_segment_points(labels_image, number_regions)
         # Construct image of the segment and save to disk.
-        self._make_segment_images(segmented_image)
+        self._make_segment_images(segmented_image, label_shadows)
 
         self.segmented_image = segmented_image
 
@@ -176,12 +176,12 @@ class ImageProcessed(object):
             else:
                 self.segments[i]["is_shadow"] = False
 
-    def _make_segment_images(self, segmented_image):
+    def _make_segment_images(self, segmented_image, label_shadows):
         """
         Make a seperate segmented images using the points in self.segements.
         """
 
-        if self.mode != "":
+        if self.mode != "" and label_shadows:
             self.label_shadow_segments()
 
         totalWidth = 0
@@ -200,6 +200,7 @@ class ImageProcessed(object):
                 maxY += 1
 
             newImage = np.zeros((maxX-minX, maxY-minY, 4), dtype=self.image.dtype)
+            segmentShadowMask = np.zeros((maxX-minX, maxY-minY), dtype=self.image.dtype)
             # print("minX, minY:", minX, minY)
             # print("maxX, maxY:",maxX, maxY)
             for row in range(minY, maxY):
@@ -213,19 +214,20 @@ class ImageProcessed(object):
                                     self.image[col, row][2],
                                     255, # point is in segment
                                 ]
-                            # # Uncomment to make segment area green.
-                            # newImage[col-minX, row-minY] = [0, 255, 0, 1]
+                        if label_shadows:
+                            if self._is_shadow_point(col, row):
+                                segmentShadowMask[col-minX, row-minY] = 255
                     else:
                         # When col, row is NOT in the current segment.
 
-                        newImage[col-minX, row-minY] = [ 0, 0, 0, 0 ]
+                        # newImage[col-minX, row-minY] = [ 0, 0, 0, 0 ]
 
-                        # newImage[col-minX, row-minY] = [
-                        #             self.image[col, row][0],
-                        #             self.image[col, row][1],
-                        #             self.image[col, row][2],
-                        #             0, # point is not in segment
-                        #         ]
+                        newImage[col-minX, row-minY] = [
+                                    self.image[col, row][0],
+                                    self.image[col, row][1],
+                                    self.image[col, row][2],
+                                    0, # point is not in segment
+                                ]
 
             # if newImage.
             if newImage.shape[0] > newImage.shape[1]:
@@ -247,6 +249,11 @@ class ImageProcessed(object):
                     write_file = os.path.join("segments","non_shadows",
                                               self.filename+"_"+ str(i)+".png")
                 print("writing", write_file)
+                cv.imwrite(
+                        os.path.join("segments", "shadow_masks",
+                            self.filename+"_"+ str(i)+".png"),
+                        segmentShadowMask
+                        )
                 cv.imwrite(write_file, self.segments[i]["image"])
 
             # print(i, self.segments[i]["is_shadow"])
