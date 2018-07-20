@@ -1,16 +1,23 @@
 # Shadow Detector
 
-## Installing pymeanshift
+## Installing Dependencies 
 
 ```
+pip install -r requirements.txt
+git submodule update --init
 cd pymeanshift
 ./setup.py install
 ```
-## Generating dataset
+
+## Downloading SBU-Dataset and setting up project structure
 
 ```
-./make_dataset.py
+./init.sh
 ```
+
+Running this will download the [SBU shadow dataset](http://www3.cs.stonybrook.edu/~cvl/content/datasets/shadow_db/SBU-shadow.zip)
+and extract it under the ```data``` directory, as well as create the
+```checkpoints``` directory.
 
 ## Training the model
 
@@ -18,9 +25,8 @@ cd pymeanshift
 ./train.py
 ```
 
-This will save the model along with the weights at ```model.h5``` after the
-final iteration of training and also saves the models with the best accuracy
-under the ```checkpoints``` directory.
+This will save the models with the best accuracies under the ```checkpoints```
+directory.
 
 ## Detecting shadows
 
